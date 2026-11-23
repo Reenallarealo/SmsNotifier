@@ -1,6 +1,0 @@
-{
-  "port": 17890,
-  "path": "/webhook",
-  "token": "",
-  "dedupeSeconds": 5
-}

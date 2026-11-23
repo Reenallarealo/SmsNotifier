@@ -11,9 +11,27 @@ $LogDir = Join-Path $Root 'logs'
 $DataDir = Join-Path $Root 'data'
 $AppId = 'SmsNotifier.Desktop'
 $FallbackAppId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
-New-Item -ItemType Directory -Force -Path $LogDir, $DataDir | Out-Null
+$script:LogEnabled = $false
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+
+function Test-LogEnabled {
+    $path = Join-Path $Root 'config.json'
+    if (-not (Test-Path -LiteralPath $path)) { return $false }
+    try {
+        $raw = [System.IO.File]::ReadAllText($path, [System.Text.UTF8Encoding]::new($false))
+        $cfg = $raw | ConvertFrom-Json
+        if ($cfg.PSObject.Properties.Name -contains 'logEnabled') { return [bool]$cfg.logEnabled }
+    } catch { }
+    return $false
+}
+
+$script:LogEnabled = Test-LogEnabled
+if ($script:LogEnabled) {
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+}
 
 function Write-Log([string]$Message) {
+    if (-not $script:LogEnabled) { return }
     $line = '{0}  {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
     $path = Join-Path $LogDir 'server.log'
     try {
@@ -35,6 +53,9 @@ function Get-Config {
     $cfg = $raw | ConvertFrom-Json
     if (-not $cfg.token -or [string]$cfg.token.Length -lt 16) {
         throw 'config.json token is missing or too short'
+    }
+    if (-not ($cfg.PSObject.Properties.Name -contains 'logEnabled')) {
+        $cfg | Add-Member -NotePropertyName logEnabled -NotePropertyValue $false -Force
     }
     $cfg | Add-Member -NotePropertyName listenPort -NotePropertyValue ([int]$(if ($Port -gt 0) { $Port } else { $cfg.port })) -Force
     $listenPath = [string]$cfg.path
@@ -373,6 +394,10 @@ if ($Test) {
 }
 
 $cfg = Get-Config
+$script:LogEnabled = [bool]$cfg.logEnabled
+if ($script:LogEnabled) {
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+}
 $mutex = New-Object System.Threading.Mutex($false, 'Local\SmsNotifierWebhook')
 if (-not $mutex.WaitOne(0)) {
     Write-Log 'another SmsNotifier instance is already running'
